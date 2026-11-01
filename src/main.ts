@@ -1,9 +1,9 @@
 import './style.css';
 import { lang, setLang, t, type StringKey } from './i18n';
-import { fromFile, loadImage, searchTopic, TOPICS, type PuzzleImage, type Topic } from './images';
+import { fromFile, loadImage, OfflineError, onlyStored, searchTopic, TOPICS, type PuzzleImage, type Topic } from './images';
 import { chooseGrid } from './puzzle/geometry';
 import { PuzzleGame } from './puzzle/game';
-import { clearGame, loadGame, saveGame, setSound, soundOn, type SavedGame } from './storage';
+import { addRecent, clearGame, loadGame, recentImages, saveGame, setSound, soundOn, type SavedGame } from './storage';
 import { playFinish } from './sound';
 
 const app = document.getElementById('app')!;
@@ -57,7 +57,7 @@ function icon(name: 'back' | 'eye' | 'guide' | 'gather' | 'photo' | 'refresh' | 
 
 // ------------------------------------------------------------------ home screen
 
-let currentTopic: Topic = TOPICS[0];
+let currentTopic: Topic = TOPICS.find((t) => t.id === 'samples')!;
 const galleryCache = new Map<string, PuzzleImage[]>();
 let galleryAbort: AbortController | null = null;
 
@@ -119,7 +119,7 @@ function showHome(): void {
   });
 
   const topics = h('div', { class: 'topics', role: 'tablist' },
-    ...TOPICS.map((topic) =>
+    ...TOPICS.filter((topic) => topic.id !== 'recent' || recentImages().length > 0).map((topic) =>
       h('button', {
         class: `chip ${topic.id === currentTopic.id ? 'active' : ''}`,
         role: 'tab',
@@ -156,30 +156,45 @@ async function fillGallery(gallery: HTMLElement, refresh: boolean): Promise<void
   galleryAbort?.abort();
   const abort = new AbortController();
   galleryAbort = abort;
-  let images = refresh ? undefined : galleryCache.get(topic.id);
+  let images = refresh || topic.id === 'recent' ? undefined : galleryCache.get(topic.id);
+  let offline = false;
   if (!images) {
     gallery.replaceChildren(h('p', { class: 'status' }, t('loading')));
     try {
-      images = await searchTopic(topic, abort.signal);
-      galleryCache.set(topic.id, images);
+      const result = await searchTopic(topic, abort.signal);
+      images = result.images;
+      offline = result.offline;
+      if (topic.id !== 'recent' && !offline) galleryCache.set(topic.id, images);
     } catch (err) {
       if (abort.signal.aborted) return;
-      gallery.replaceChildren(
-        h('div', { class: 'status' },
-          h('p', {}, t('loadError')),
-          h('button', { class: 'pill big', onClick: () => void fillGallery(gallery, true) }, t('tryAgain')),
-        ),
-      );
-      return;
+      if (!(err instanceof OfflineError)) {
+        gallery.replaceChildren(
+          h('div', { class: 'status' },
+            h('p', {}, t('loadError')),
+            h('button', { class: 'pill big', onClick: () => void fillGallery(gallery, true) }, t('tryAgain')),
+          ),
+        );
+        return;
+      }
+      // Offline and nothing stored for this search: fall back to pictures she has played.
+      offline = true;
+      images = recentImages();
     }
   }
+  // Offline, only offer pictures that are actually stored on the device.
+  if (offline) images = await onlyStored(images);
   if (abort.signal.aborted) return;
+  const tiles = images.map((img) => {
+    const thumb = h('img', { src: img.thumb, alt: '', loading: 'lazy', decoding: 'async' });
+    // The small version may not be stored offline even when the full picture is.
+    thumb.addEventListener('error', () => {
+      if (thumb.src !== img.src) thumb.src = img.src;
+    }, { once: true });
+    return h('button', { class: 'tile', onClick: () => openPicker(img), 'aria-label': img.title }, thumb);
+  });
   gallery.replaceChildren(
-    ...images.map((img) =>
-      h('button', { class: 'tile', onClick: () => openPicker(img), 'aria-label': img.title },
-        h('img', { src: img.thumb, alt: '', loading: 'lazy', decoding: 'async' }),
-      ),
-    ),
+    ...(offline ? [h('p', { class: 'status offline' }, images.length ? t('offlineNote') : t('nothingOffline'))] : []),
+    ...tiles,
   );
 }
 
@@ -309,6 +324,7 @@ async function startGame(image: PuzzleImage, cols: number, rows: number, seed: n
   );
 
   app.replaceChildren(h('div', { class: 'play' }, toolbar, table));
+  addRecent(image);
   wakeLock(true);
 
   const isNew = !saved;
@@ -407,5 +423,12 @@ document.addEventListener('visibilitychange', () => {
     void wakeLock(true);
   }
 });
+
+// Offline support: only in the built app, so the dev server never serves stale files.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
+    // Without it the app still works, just not offline.
+  });
+}
 
 showHome();

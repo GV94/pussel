@@ -24,6 +24,15 @@ const strings = {
   topic_sea: { sv: 'Hav och kust', en: 'Sea and coast' },
   topic_paintings: { sv: 'Konst', en: 'Paintings' },
   topic_samples: { sv: 'Utvalda', en: 'Favourites' },
+  topic_recent: { sv: 'Senaste', en: 'Recent' },
+  offlineNote: {
+    sv: 'Ingen internetanslutning. Här är bilderna som finns sparade på enheten.',
+    en: 'No internet connection. Here are the pictures saved on this device.',
+  },
+  nothingOffline: {
+    sv: 'Inga sparade bilder i den här gruppen. Prova Utvalda eller Senaste.',
+    en: 'No saved pictures in this group. Try Favourites or Recent.',
+  },
 
   howManyPieces: { sv: 'Hur många bitar?', en: 'How many pieces?' },
   level_1: { sv: 'Mycket lätt', en: 'Very easy' },

@@ -18,6 +18,10 @@ npm run build      # static files in dist/, host anywhere
 
 On the iPad, open the address that `dev:ipad` prints, tap Share, then "Add to Home Screen".
 
+## Offline
+
+It's a PWA: add it to the home screen and it opens full screen like an app. After one visit online it works without internet. The app and the eight bundled pictures are stored on install; every Commons picture is stored the first time it is shown (up to 120). Offline, the gallery shows only pictures that are on the device, and "Recent" lists pictures you have played. The service worker is `public/sw.js` and only runs in the built app, not on the dev server.
+
 Every push to `main` builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## How it plays

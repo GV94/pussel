@@ -3,6 +3,7 @@
 // P6216 = copyright status). No API key needed and CORS is open (origin=*).
 
 import type { StringKey } from './i18n';
+import { recentImages } from './storage';
 
 export type PuzzleImage = {
   /** Stable id, used for saving. */
@@ -25,6 +26,7 @@ export type Topic = { id: string; label: StringKey; query?: string };
 const FREE = 'haswbstatement:P275=Q6938433|P6216=Q19652 filew:>1600';
 
 export const TOPICS: Topic[] = [
+  { id: 'recent', label: 'topic_recent' },
   { id: 'samples', label: 'topic_samples' },
   { id: 'flowers', label: 'topic_flowers', query: `deepcat:Quality_images_of_flowers ${FREE}` },
   { id: 'landscapes', label: 'topic_landscapes', query: `deepcat:Quality_images_of_landscapes ${FREE}` },
@@ -87,8 +89,13 @@ function toPuzzleImage(p: CommonsPage): PuzzleImage | null {
   };
 }
 
-export async function searchTopic(topic: Topic, signal?: AbortSignal): Promise<PuzzleImage[]> {
-  if (!topic.query) return loadSamples();
+/** Thrown when there is no network, so the gallery can fall back to stored pictures. */
+export class OfflineError extends Error {}
+
+/** `offline` is true when the answer came from the device, not the network. */
+export async function searchTopic(topic: Topic, signal?: AbortSignal): Promise<{ images: PuzzleImage[]; offline: boolean }> {
+  if (topic.id === 'recent') return { images: recentImages(), offline: false };
+  if (!topic.query) return { images: await loadSamples(), offline: false };
   const params = new URLSearchParams({
     action: 'query',
     format: 'json',
@@ -103,11 +110,18 @@ export async function searchTopic(topic: Topic, signal?: AbortSignal): Promise<P
     iiurlwidth: '1920',
     iiextmetadatafilter: 'LicenseShortName|Artist',
   });
-  const res = await fetch(`${API}?${params}`, { signal });
+  let res: Response;
+  try {
+    res = await fetch(`${API}?${params}`, { signal });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    throw new OfflineError(); // network failure, not a server error
+  }
   if (!res.ok) throw new Error(`Commons ${res.status}`);
   const json = (await res.json()) as { query?: { pages?: Record<string, CommonsPage> } };
   const pages = Object.values(json.query?.pages ?? {});
-  return pages.map(toPuzzleImage).filter((x): x is PuzzleImage => x !== null).slice(0, 24);
+  const images = pages.map(toPuzzleImage).filter((x): x is PuzzleImage => x !== null).slice(0, 24);
+  return { images, offline: res.headers.get('X-Pussel-Offline') === '1' };
 }
 
 /** Bundled pictures that work offline. See public/samples/credits.json. */
@@ -121,6 +135,16 @@ export async function loadSamples(): Promise<PuzzleImage[]> {
     src: `${base}samples/${file}`,
     thumb: `${base}samples/${thumbFile}`,
   }));
+}
+
+/**
+ * Keep only pictures that are stored on the device (offline). The service
+ * worker stores every picture once it has been shown.
+ */
+export async function onlyStored(images: PuzzleImage[]): Promise<PuzzleImage[]> {
+  if (!('caches' in window)) return images;
+  const keep = await Promise.all(images.map(async (img) => img.src.startsWith('data:') || (await caches.match(img.src)) !== undefined));
+  return images.filter((_, i) => keep[i]);
 }
 
 /** Load an image element, resolving when it's decoded. */

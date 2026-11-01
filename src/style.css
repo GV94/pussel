@@ -777,3 +777,7 @@ h2 {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+.status.offline {
+  padding: 8px 0 0;
+}
