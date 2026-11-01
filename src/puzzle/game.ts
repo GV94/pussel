@@ -705,10 +705,6 @@ export class PuzzleGame {
       this.drawPieceAt(p, this.ox + p.x * this.scale, this.oy + p.y * this.scale, this.scale);
     }
 
-    if (this.focus !== null && this.pieces[this.focus].state === 'table' && !dragging.has(this.focus)) {
-      const p = this.pieces[this.focus];
-      this.strokeSelection(this.focus, this.ox + p.x * this.scale, this.oy + p.y * this.scale, this.scale);
-    }
     animating = this.drawFlashes(now) || animating;
     return animating;
   }
@@ -824,7 +820,6 @@ export class PuzzleGame {
           const cx = c.cx + (this.trayVertical ? 0 : shift);
           const cy = c.cy + (this.trayVertical ? shift : 0);
           g.drawImage(bmp, cx - size / 2, cy - size / 2, size, size);
-          if (k === 0 && i === this.focus) this.strokeSelection(i, cx - scale / 2, cy - scale / 2, scale);
         });
       }
       g.restore();
@@ -914,27 +909,6 @@ export class PuzzleGame {
       if (Math.abs(x - c.cx) <= c.w / 2 && Math.abs(y - c.cy) <= c.h / 2) return this.tray[this.pageStart + k] ?? null;
     }
     return null;
-  }
-
-  /** Thick outline around the selected piece, whose cell top-left is at screen (x, y). */
-  private strokeSelection(i: number, x: number, y: number, scale: number): void {
-    const g = this.ctx;
-    const shape = this.pieces[i].shape;
-    const path = new Path2D();
-    traceOutline(path, shape.outline, shape.col - x / scale, shape.row - y / scale, scale);
-    // Outline drawn only outside the piece, so it never covers the picture on it.
-    const outside = new Path2D();
-    outside.rect(0, 0, this.W, this.H);
-    outside.addPath(path);
-    g.save();
-    g.clip(outside, 'evenodd');
-    g.lineJoin = 'round';
-    g.strokeStyle = '#ffd34d';
-    g.lineWidth = 8; // half of it is clipped away: 4 px visible
-    g.shadowColor = 'rgba(0,0,0,0.3)';
-    g.shadowBlur = 4;
-    g.stroke(path);
-    g.restore();
   }
 
   /** The small-pieces view is offered where there's room for it (not on phones). */
