@@ -47,7 +47,7 @@ const strings = {
   trayAll: { sv: 'Alla bitar', en: 'All pieces' },
   zoomIn: { sv: 'Zooma in', en: 'Zoom in' },
   zoomOut: { sv: 'Zooma ut', en: 'Zoom out' },
-  pickHint: { sv: 'Tryck på en bit, sedan där den ska ligga', en: 'Tap a piece, then tap where it goes' },
+  pickHint: { sv: 'Dra bitarna dit de ska ligga', en: 'Drag the pieces to where they go' },
   trayBig: { sv: 'Stora bitar', en: 'Large pieces' },
   pieces: { sv: 'bitar', en: 'pieces' },
   cancel: { sv: 'Avbryt', en: 'Cancel' },

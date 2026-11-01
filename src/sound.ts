@@ -50,7 +50,3 @@ export function playPickup(): void {
 export function playFinish(): void {
   [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.14, 0.6, 0.15, 'triangle'));
 }
-
-export function playMiss(): void {
-  tone(220, 0, 0.18, 0.1, 'sine');
-}

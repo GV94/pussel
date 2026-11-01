@@ -5,7 +5,7 @@
 
 import { buildPieces, mulberry32, traceOutline, TAB_REACH, type PieceShape } from './geometry';
 import type { BoardMode, PieceState, SavedGame } from '../storage';
-import { playMiss, playPickup, playSnap, unlockAudio } from '../sound';
+import { playPickup, playSnap, unlockAudio } from '../sound';
 
 type Piece = {
   shape: PieceShape;
@@ -34,8 +34,6 @@ type Gesture =
 /** Two fingers zooming the board. World point under the midpoint stays under it. */
 type Pinch = { a: number; b: number; startDist: number; startZoom: number; wx: number; wy: number };
 
-/** Short-lived outline on the board: a wrong guess, or a hint after several. */
-type Flash = { col: number; row: number; kind: 'miss' | 'hint'; t0: number };
 
 type SnapAnim = { piece: number; fromX: number; fromY: number; t0: number };
 
@@ -68,10 +66,6 @@ const CTL = 56;
 /** Padding inside the tray. */
 const INSET = 8;
 const SNAP_MS = 140;
-const MISS_MS = 700;
-const HINT_MS = 2400;
-/** Wrong guesses with the same piece before its spot is pointed out. */
-const MISSES_BEFORE_HINT = 3;
 /** Set once she has opened a piece, after which the "tap a piece" hint stops showing. */
 const LEARNED_KEY = 'jigsaw.learnedTap';
 const TOAST_MS = 5000;
@@ -128,7 +122,7 @@ export class PuzzleGame {
   private toastTimer = 0;
   /** Preview mode: the whole picture shown clearly on the board, no outlines. */
   private preview = false;
-  /** The selected piece: the one a tap on the board will try to place. */
+  /** The piece in her hand while dragging (for the landing preview), or the piece tapped in the small grid. */
   private focus: number | null = null;
   /**
    * 'big': the tray shows a page of large pieces (the default, and the only mode
@@ -144,8 +138,6 @@ export class PuzzleGame {
   private swipeOffset = 0;
   private swipeTarget: number | null = null;
   private bigBitmapScale = 0;
-  private misses = 0;
-  private flashes: Flash[] = [];
   private trayScroll = 0;
   private trayVelocity = 0;
 
@@ -217,7 +209,6 @@ export class PuzzleGame {
     this.resizeObserver = new ResizeObserver(() => this.layout());
     this.resizeObserver.observe(container);
     this.layout();
-    this.focus = this.tray[0] ?? null;
     this.reportProgress();
     window.setTimeout(() => this.hintOnce(LEARNED_KEY, opts.labels.pickHint), 700);
   }
@@ -248,10 +239,6 @@ export class PuzzleGame {
 
   private hideToast(): void {
     this.toast.classList.remove('show');
-  }
-
-  private learnedPlacing(): void {
-    this.hideToast();
   }
 
   destroy(): void {
@@ -664,7 +651,7 @@ export class PuzzleGame {
     if (animating || this.trayVelocity !== 0 || this.trayTarget !== null || this.swipeTarget !== null) this.requestDraw();
   }
 
-  /** Board, placed pieces, snap animations, loose pieces and flashes. Returns true while animating. */
+  /** Board, placed pieces, snap animations and loose pieces. Returns true while animating. */
   private drawBoardAndTable(dragging: Set<number>, now: number): boolean {
     const g = this.ctx;
     // Board
@@ -705,31 +692,7 @@ export class PuzzleGame {
       this.drawPieceAt(p, this.ox + p.x * this.scale, this.oy + p.y * this.scale, this.scale);
     }
 
-    animating = this.drawFlashes(now) || animating;
     return animating;
-  }
-
-  private drawFlashes(now: number): boolean {
-    const g = this.ctx;
-    this.flashes = this.flashes.filter((f) => now - f.t0 < (f.kind === 'miss' ? MISS_MS : HINT_MS));
-    for (const f of this.flashes) {
-      const t = (now - f.t0) / (f.kind === 'miss' ? MISS_MS : HINT_MS);
-      const path = this.screenPath(f.col, f.row);
-      g.save();
-      g.lineJoin = 'round';
-      if (f.kind === 'miss') {
-        g.globalAlpha = 1 - t;
-        g.strokeStyle = '#d94f3d';
-        g.lineWidth = Math.max(4, this.scale * 0.06);
-      } else {
-        g.globalAlpha = 0.55 + 0.45 * Math.sin(t * Math.PI * 6);
-        g.strokeStyle = '#ffd34d';
-        g.lineWidth = Math.max(5, this.scale * 0.08);
-      }
-      g.stroke(path);
-      g.restore();
-    }
-    return this.flashes.length > 0;
   }
 
   /** Outline of grid cell (col, row) in screen coordinates. */
@@ -893,8 +856,6 @@ export class PuzzleGame {
     if (this.swipeTarget !== null && this.swipeTarget !== 0) {
       const n = this.bigLayout().cells.length;
       this.pageStart = this.pageStartAt(this.swipeTarget < 0 ? 1 : -1, n);
-      this.focus = this.tray[this.pageStart] ?? null;
-      this.misses = 0;
     }
     this.swipeTarget = null;
     this.swipeOffset = 0;
@@ -926,33 +887,6 @@ export class PuzzleGame {
     }
     this.clampTrayScroll();
     this.requestDraw();
-  }
-
-  private setFocus(piece: number | null): void {
-    if (piece !== this.focus) this.misses = 0;
-    this.focus = piece;
-    if (piece !== null) {
-      localStorage.setItem(LEARNED_KEY, '1');
-      playPickup();
-    }
-    this.requestDraw();
-  }
-
-  /** After placing the selected piece, select the next one on the same page so she can carry on. */
-  private advanceFocus(fromIndex: number): void {
-    this.misses = 0;
-    if (this.tray.length === 0) {
-      this.focus = null;
-      return;
-    }
-    if (this.trayMode === 'big') {
-      const n = this.bigLayout().cells.length;
-      if (this.pageStart >= this.tray.length) this.pageStart = Math.floor((this.tray.length - 1) / n) * n;
-      const end = Math.min(this.tray.length, this.pageStart + n) - 1;
-      this.focus = this.tray[clamp(fromIndex, this.pageStart, end)];
-      return;
-    }
-    this.focus = this.tray[Math.min(Math.max(fromIndex, 0), this.tray.length - 1)];
   }
 
   private placeArrows(): void {
@@ -1265,14 +1199,13 @@ export class PuzzleGame {
     if (gs.kind === 'pending') {
       clearTimeout(gs.timer);
       if (cancelled) return;
-      // A tap.
+      // A tap. Pieces are placed by dragging; the only tap that does anything is
+      // in the small-pieces view, where it opens the large page holding that piece.
       if (gs.origin === 'tray' && gs.piece !== null) {
-        // From the small grid: open the big page that holds this piece.
         this.focus = gs.piece;
         this.setMode('big');
-        this.setFocus(gs.piece);
-      } else if ((gs.origin === 'big' || gs.origin === 'table') && gs.piece !== null) this.setFocus(gs.piece);
-      else if (gs.origin === 'board' && this.focus !== null) this.tryPlace(this.focus, this.cellAt(gs.startX, gs.startY));
+        playPickup();
+      }
       return;
     }
     if (gs.kind === 'scroll') {
@@ -1282,29 +1215,6 @@ export class PuzzleGame {
     }
     this.drop(gs);
   };
-
-  /** Put a piece on a cell chosen by tapping. Only the right cell takes it. */
-  private tryPlace(i: number, cell: { col: number; row: number } | null): void {
-    if (!cell) return;
-    const p = this.pieces[i];
-    if (cell.col === p.shape.col && cell.row === p.shape.row) {
-      this.learnedPlacing();
-      const k = this.tray.indexOf(i);
-      this.place(i, p.shape.col, p.shape.row - 0.12);
-      if (this.focus === i) this.advanceFocus(k);
-      this.requestDraw();
-      return;
-    }
-    this.misses++;
-    const now = performance.now();
-    this.flashes.push({ ...cell, kind: 'miss', t0: now });
-    if (this.misses >= MISSES_BEFORE_HINT) {
-      this.flashes.push({ col: p.shape.col, row: p.shape.row, kind: 'hint', t0: now });
-      this.misses = 0;
-    }
-    playMiss();
-    this.requestDraw();
-  }
 
   private place(i: number, fromX: number, fromY: number): void {
     const p = this.pieces[i];
@@ -1336,8 +1246,7 @@ export class PuzzleGame {
   }
 
   private startDrag(id: number, piece: number, dx: number, dy: number, px: number, py: number): void {
-    if (this.focus !== piece) this.misses = 0;
-    this.focus = piece; // the piece in her hand is the selected one
+    this.focus = piece; // shown faintly where it would land
     this.gestures.set(id, { kind: 'drag', id, piece, dx, dy, px, py });
     playPickup();
     this.requestDraw();
@@ -1353,9 +1262,7 @@ export class PuzzleGame {
     // down there, like on a real table, so she can try pieces out.
     const cell = this.cellAt(centreX, centreY);
     if (cell && cell.col === p.shape.col && cell.row === p.shape.row) {
-      const k = this.tray.indexOf(i);
       this.place(i, wx, wy);
-      if (this.focus === i) this.advanceFocus(k);
       this.requestDraw();
       return;
     }

@@ -28,9 +28,8 @@ Every push to `main` builds and deploys to GitHub Pages (`.github/workflows/depl
 
 - Pick a picture, then tap how many pieces: 6, 12, 20, 35, 50 or 144 (one tap starts the puzzle). At 144 the pieces are small on screen; zoom and the large-piece tray make them workable.
 - Pieces wait in a tray beside the board, shown large a few at a time (2×2 on a phone). Swipe the tray or use the arrows to page through them; it wraps around endlessly. On an iPad, "All pieces" switches to a scrollable view of every piece.
-- Tap a piece to select it, then tap the spot on the picture where it goes. A wrong spot flashes red; after three misses the right spot pulses yellow.
-- Dragging also works: drop a piece anywhere inside its spot and it clicks into place. Dropped anywhere else, it just lies there, so you can try pieces out. While dragging, the piece hangs just above your finger and a faint copy shows where it would land.
-- Pieces never need rotating and only stick in the right spot, so nothing can get tangled.
+- Drag a piece from the tray to the picture: drop it anywhere inside its spot and it clicks into place. Dropped anywhere else, it just lies there, so you can try pieces out. While dragging, the piece hangs just above your finger and a faint copy shows where it would land.
+- Pieces never need rotating and only snap in on their own spot.
 - The Board button chooses what the board shows: picture and lines, lines only, or a blank white board. The eye button toggles a preview of the whole picture on the board. "Gather pieces" puts loose pieces back in the tray, edge pieces first.
 - Progress saves automatically. The home screen offers "Continue puzzle".
 - You can use your own photo from the iPad.
