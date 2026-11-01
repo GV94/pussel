@@ -1,0 +1,90 @@
+[
+  {
+    "id": "commons:254423",
+    "file": "sample-1.jpg",
+    "thumbFile": "sample-1-thumb.jpg",
+    "width": 1920,
+    "height": 1369,
+    "title": "P. S. Krøyer – Sommeraften ved Skagens strand (1899)",
+    "author": "Peder Severin Krøyer",
+    "license": "Public domain",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:P_S_Kr%C3%B8yer_1899_-_Sommeraften_ved_Skagens_strand._Kunstneren_og_hans_hustru.jpg"
+  },
+  {
+    "id": "commons:12751791",
+    "file": "sample-2.jpg",
+    "thumbFile": "sample-2-thumb.jpg",
+    "width": 1920,
+    "height": 1021,
+    "title": "Kullens fyr",
+    "author": "David Castor",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Kullens_fyr.jpg"
+  },
+  {
+    "id": "commons:14060928",
+    "file": "sample-3.jpg",
+    "thumbFile": "sample-3-thumb.jpg",
+    "width": 1920,
+    "height": 1920,
+    "title": "Bunch tulip Paris 2011",
+    "author": "Jebulon",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Bunch_tulip_Paris_2011.jpg"
+  },
+  {
+    "id": "commons:14867974",
+    "file": "sample-4.jpg",
+    "thumbFile": "sample-4-thumb.jpg",
+    "width": 1920,
+    "height": 1918,
+    "title": "Paeonia suffruticosa Yatsuka JdP",
+    "author": "Jebulon",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Paeonia_suffruticosa_Yatsuka_JdP.jpg"
+  },
+  {
+    "id": "commons:14984492",
+    "file": "sample-5.jpg",
+    "thumbFile": "sample-5-thumb.jpg",
+    "width": 1920,
+    "height": 1334,
+    "title": "Boat bateau Panormittis Symi",
+    "author": "Jebulon",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Boat_bateau_Panormittis_Symi.jpg"
+  },
+  {
+    "id": "commons:19010687",
+    "file": "sample-6.jpg",
+    "thumbFile": "sample-6-thumb.jpg",
+    "width": 1920,
+    "height": 1280,
+    "title": "Knölsvan i Magle våtmark",
+    "author": "David Castor",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Kn%C3%B6lsvan_i_Magle_v%C3%A5tmark.jpg"
+  },
+  {
+    "id": "commons:28444954",
+    "file": "sample-7.jpg",
+    "thumbFile": "sample-7-thumb.jpg",
+    "width": 1920,
+    "height": 1278,
+    "title": "Landscape Dordogne Château de Hautefort 18",
+    "author": "Jebulon",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Landscape_Dordogne_Ch%C3%A2teau_de_Hautefort_18.jpg"
+  },
+  {
+    "id": "commons:76097663",
+    "file": "sample-8.jpg",
+    "thumbFile": "sample-8-thumb.jpg",
+    "width": 1920,
+    "height": 1280,
+    "title": "Young tabby cat keeping watch",
+    "author": "W.carter",
+    "license": "CC0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Young_tabby_cat_keeping_watch.jpg"
+  }
+]

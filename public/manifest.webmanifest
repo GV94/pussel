@@ -1,0 +1,14 @@
+{
+  "name": "Pussel",
+  "short_name": "Pussel",
+  "description": "Free, open-source jigsaw puzzles with no ads.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f2ea",
+  "theme_color": "#f7f2ea",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
