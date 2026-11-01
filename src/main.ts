@@ -3,7 +3,7 @@ import { lang, setLang, t, type StringKey } from './i18n';
 import { fromFile, loadImage, OfflineError, onlyStored, searchTopic, TOPICS, type PuzzleImage, type Topic } from './images';
 import { chooseGrid } from './puzzle/geometry';
 import { PuzzleGame } from './puzzle/game';
-import { addRecent, clearGame, loadGame, recentImages, saveGame, setSound, soundOn, type SavedGame } from './storage';
+import { addRecent, clearGame, loadGame, recentImages, saveGame, setSound, soundOn, type BoardMode, type SavedGame } from './storage';
 import { playFinish } from './sound';
 
 const app = document.getElementById('app')!;
@@ -209,7 +209,6 @@ const LEVELS: { target: number; label: StringKey }[] = [
   { target: 50, label: 'level_5' },
   { target: 144, label: 'level_6' },
 ];
-const LEVEL_KEY = 'jigsaw.level';
 
 /** A thumbnail cut into the grid, so the choice is visible rather than just a number. */
 function levelGrid(src: string, cols: number, rows: number): HTMLElement {
@@ -224,37 +223,25 @@ function levelGrid(src: string, cols: number, rows: number): HTMLElement {
 
 function openPicker(image: PuzzleImage): void {
   const aspect = image.width / image.height;
-  let chosen = Number(localStorage.getItem(LEVEL_KEY) ?? 1);
-  if (!(chosen >= 0 && chosen < LEVELS.length)) chosen = 1;
   const hasSaved = loadGame() !== null;
+  const close = () => overlay.remove();
 
-  const buttons = LEVELS.map((lvl, i) => {
+  // One tap starts the puzzle. A separate "select, then Start" step confused
+  // her: she thought the pre-selected choice had already started it.
+  const buttons = LEVELS.map((lvl) => {
     const g = chooseGrid(lvl.target, aspect);
-    const b = h('button', {
-      class: `level ${i === chosen ? 'active' : ''}`,
-      'aria-pressed': String(i === chosen),
+    return h('button', {
+      class: 'level',
       onClick: () => {
-        chosen = i;
-        buttons.forEach((x, j) => {
-          x.classList.toggle('active', j === i);
-          x.setAttribute('aria-pressed', String(j === i));
-        });
+        close();
+        void startGame(image, g.cols, g.rows, Math.floor(Math.random() * 2 ** 31));
       },
     },
       levelGrid(image.thumb, g.cols, g.rows),
       h('span', { class: 'level-count' }, String(g.cols * g.rows)),
       h('span', { class: 'level-label' }, t(lvl.label)),
     );
-    return b;
   });
-
-  const close = () => overlay.remove();
-  const start = () => {
-    localStorage.setItem(LEVEL_KEY, String(chosen));
-    const g = chooseGrid(LEVELS[chosen].target, aspect);
-    close();
-    void startGame(image, g.cols, g.rows, Math.floor(Math.random() * 2 ** 31));
-  };
 
   const credit = image.license
     ? h('p', { class: 'credit' },
@@ -268,12 +255,12 @@ function openPicker(image: PuzzleImage): void {
     h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' },
       h('img', { class: 'preview', src: image.src, alt: image.title }),
       credit,
-      h('h2', {}, t('howManyPieces')),
+      h('h2', { class: 'levels-title' }, t('howManyPieces')),
+      h('p', { class: 'levels-hint' }, t('tapToStart')),
       h('div', { class: 'levels' }, ...buttons),
-      hasSaved ? h('p', { class: 'note' }, t('replaceSaved')) : null,
-      h('div', { class: 'actions' },
+      h('div', { class: 'actions with-note' },
+        hasSaved ? h('p', { class: 'note' }, t('replaceSaved')) : null,
         h('button', { class: 'pill big secondary', onClick: close }, t('cancel')),
-        h('button', { class: 'pill big primary', onClick: start }, t('start')),
       ),
     ),
   );
@@ -300,7 +287,7 @@ async function startGame(image: PuzzleImage, cols: number, rows: number, seed: n
   }
 
   const counter = h('div', { class: 'counter', 'aria-live': 'polite' });
-  const guideBtn = h('button', { class: 'tool toggle' }, icon('guide'), h('span', {}, t('guide')));
+  const guideBtn = h('button', { class: 'tool' }, icon('guide'), h('span', {}, t('guide')));
   // Toggles the whole picture on the board, so she can compare while zoomed in.
   const previewBtn = h('button', { class: 'tool toggle', 'aria-pressed': 'false' }, icon('eye'), h('span', {}, t('showPicture')));
   const table = h('div', { class: 'table' });
@@ -335,7 +322,7 @@ async function startGame(image: PuzzleImage, cols: number, rows: number, seed: n
     rows,
     seed,
     saved,
-    guide: saved?.guide ?? true,
+    board: saved?.board ?? (saved && !saved.guide ? 'lines' : 'full'),
     onProgress: (done, total) => {
       counter.textContent = t('piecesPlaced', { done, total });
     },
@@ -349,21 +336,44 @@ async function startGame(image: PuzzleImage, cols: number, rows: number, seed: n
     },
   });
   if (import.meta.env.DEV) (window as unknown as { __game: PuzzleGame }).__game = game;
-  const syncGuide = () => {
-    guideBtn.classList.toggle('active', game?.guideOn ?? false);
-    guideBtn.setAttribute('aria-pressed', String(game?.guideOn ?? false));
-  };
   previewBtn.addEventListener('click', () => {
     game?.setPreview(!game.previewOn);
     previewBtn.classList.toggle('active', game?.previewOn ?? false);
     previewBtn.setAttribute('aria-pressed', String(game?.previewOn ?? false));
   });
   guideBtn.addEventListener('click', () => {
-    game?.setGuide(!game.guideOn);
-    syncGuide();
+    if (game) chooseBoardMode(game);
   });
-  syncGuide();
   if (isNew) save();
+}
+
+/** Three big, plain choices for what the board shows under the pieces. */
+function chooseBoardMode(g: PuzzleGame): void {
+  const modes: { mode: BoardMode; label: StringKey }[] = [
+    { mode: 'full', label: 'board_full' },
+    { mode: 'lines', label: 'board_lines' },
+    { mode: 'blank', label: 'board_blank' },
+  ];
+  const close = () => overlay.remove();
+  const overlay = h('div', { class: 'overlay', onClick: (e) => e.target === overlay && close() },
+    h('div', { class: 'sheet small', role: 'dialog', 'aria-modal': 'true' },
+      h('h2', {}, t('boardTitle')),
+      h('div', { class: 'board-modes' },
+        ...modes.map(({ mode, label }) =>
+          h('button', {
+            class: `board-mode ${g.boardMode === mode ? 'current' : ''}`,
+            'aria-pressed': String(g.boardMode === mode),
+            onClick: () => {
+              g.setBoardMode(mode);
+              close();
+            },
+          }, h('span', { class: `board-swatch ${mode}` }), t(label)),
+        ),
+      ),
+      h('div', { class: 'actions' }, h('button', { class: 'pill big secondary', onClick: close }, t('cancel'))),
+    ),
+  );
+  document.body.append(overlay);
 }
 
 function showFinished(image: PuzzleImage, total: number): void {

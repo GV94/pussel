@@ -35,6 +35,7 @@ const strings = {
   },
 
   howManyPieces: { sv: 'Hur många bitar?', en: 'How many pieces?' },
+  tapToStart: { sv: 'Tryck på ett val för att börja.', en: 'Tap one to start.' },
   level_1: { sv: 'Mycket lätt', en: 'Very easy' },
   level_2: { sv: 'Lätt', en: 'Easy' },
   level_3: { sv: 'Lagom', en: 'Medium' },
@@ -49,7 +50,6 @@ const strings = {
   pickHint: { sv: 'Tryck på en bit, sedan där den ska ligga', en: 'Tap a piece, then tap where it goes' },
   trayBig: { sv: 'Stora bitar', en: 'Large pieces' },
   pieces: { sv: 'bitar', en: 'pieces' },
-  start: { sv: 'Börja pussla', en: 'Start puzzle' },
   cancel: { sv: 'Avbryt', en: 'Cancel' },
   replaceSaved: {
     sv: 'Det pågående pusslet ersätts.',
@@ -58,7 +58,11 @@ const strings = {
 
   home: { sv: 'Hem', en: 'Home' },
   showPicture: { sv: 'Bilden', en: 'Picture' },
-  guide: { sv: 'Hjälpbild', en: 'Guide' },
+  guide: { sv: 'Tavlan', en: 'Board' },
+  boardTitle: { sv: 'Vad ska synas på tavlan?', en: 'What should the board show?' },
+  board_full: { sv: 'Bild och linjer', en: 'Picture and lines' },
+  board_lines: { sv: 'Bara linjer', en: 'Lines only' },
+  board_blank: { sv: 'Tom tavla', en: 'Blank board' },
   tidy: { sv: 'Samla', en: 'Gather' },
   loadingPicture: { sv: 'Förbereder pusslet…', en: 'Getting the puzzle ready…' },
   pictureError: { sv: 'Bilden kunde inte hämtas. Välj en annan bild.', en: 'The picture could not be loaded. Please choose another.' },

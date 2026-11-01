@@ -5,6 +5,9 @@ export type PieceState = 'tray' | 'table' | 'placed';
 
 export type SavedPiece = { state: PieceState; x: number; y: number };
 
+/** What the board shows under the pieces: picture and lines, lines only, or nothing (a blank board). */
+export type BoardMode = 'full' | 'lines' | 'blank';
+
 export type SavedGame = {
   version: 2;
   image: PuzzleImage;
@@ -17,7 +20,9 @@ export type SavedGame = {
   tray: number[];
   /** Table draw order, bottom to top. */
   table: number[];
+  /** Older saves only have `guide` (true = picture shown). */
   guide: boolean;
+  board?: BoardMode;
 };
 
 const GAME_KEY = 'jigsaw.game';

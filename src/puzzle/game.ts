@@ -4,7 +4,7 @@
 // there is nothing to rotate, link or untangle.
 
 import { buildPieces, mulberry32, traceOutline, TAB_REACH, type PieceShape } from './geometry';
-import type { PieceState, SavedGame } from '../storage';
+import type { BoardMode, PieceState, SavedGame } from '../storage';
 import { playMiss, playPickup, playSnap, unlockAudio } from '../sound';
 
 type Piece = {
@@ -46,7 +46,7 @@ export type GameOptions = {
   rows: number;
   seed: number;
   saved?: SavedGame;
-  guide: boolean;
+  board: BoardMode;
   onProgress: (placed: number, total: number) => void;
   onChange: () => void;
   onComplete: () => void;
@@ -55,8 +55,10 @@ export type GameOptions = {
 
 /** Extra room around the cell in piece bitmaps: tabs plus the baked shadow. */
 const PAD = TAB_REACH + 0.08;
-/** How close (world units, centre to centre) a drop must be to snap. Generous on purpose. */
-const SNAP = 0.42;
+/** Dragged pieces are drawn at least this big (CSS px), so a finger doesn't hide them. */
+const DRAG_MIN_PX = 72;
+/** And this far above the finger. */
+const DRAG_LIFT_PX = 24;
 /** Tray slot size relative to piece size. */
 const SLOT = 1.65;
 /** Pieces at least this big (CSS px, about 2.9 cm on an iPad) may give up size for extra tray lanes. */
@@ -90,7 +92,7 @@ export class PuzzleGame {
   private cols: number;
   private rows: number;
   private seed: number;
-  private guide: boolean;
+  private board: BoardMode;
   private opts: GameOptions;
 
   // Layout, CSS px.
@@ -164,7 +166,7 @@ export class PuzzleGame {
     this.cols = opts.cols;
     this.rows = opts.rows;
     this.seed = opts.seed;
-    this.guide = opts.guide;
+    this.board = opts.board;
     this.crop = cropFor(this.img, this.cols / this.rows);
 
     const shapes = buildPieces({ cols: this.cols, rows: this.rows }, this.seed);
@@ -298,12 +300,12 @@ export class PuzzleGame {
     return this.pieces.length;
   }
 
-  get guideOn(): boolean {
-    return this.guide;
+  get boardMode(): BoardMode {
+    return this.board;
   }
 
-  setGuide(on: boolean): void {
-    this.guide = on;
+  setBoardMode(mode: BoardMode): void {
+    this.board = mode;
     this.renderBoardLayer();
     this.requestDraw();
     this.opts.onChange();
@@ -336,7 +338,8 @@ export class PuzzleGame {
       pieces: this.pieces.map((p) => ({ state: p.state, x: round3(p.x), y: round3(p.y) })),
       tray: [...this.tray],
       table: [...this.table],
-      guide: this.guide,
+      guide: this.board === 'full',
+      board: this.board,
     };
   }
 
@@ -579,18 +582,20 @@ export class PuzzleGame {
     const g = c.getContext('2d')!;
     g.fillStyle = 'rgba(255,255,255,0.55)';
     g.fillRect(0, 0, w, h);
-    if (this.guide) {
+    if (this.board === 'full') {
       g.globalAlpha = 0.4;
       this.drawSource(g, 0, 0, this.cols, this.rows, 0, 0, w, h);
       g.globalAlpha = 1;
     }
-    // Faint outlines show where pieces go.
-    g.strokeStyle = 'rgba(60,50,40,0.35)';
-    g.lineWidth = Math.max(1.5, s * 0.014);
-    for (const p of this.pieces) {
-      const path = new Path2D();
-      traceOutline(path, p.shape.outline, 0, 0, s);
-      g.stroke(path);
+    // Faint outlines show where pieces go (not on a blank board).
+    if (this.board !== 'blank') {
+      g.strokeStyle = 'rgba(60,50,40,0.35)';
+      g.lineWidth = Math.max(1.5, s * 0.014);
+      for (const p of this.pieces) {
+        const path = new Path2D();
+        traceOutline(path, p.shape.outline, 0, 0, s);
+        g.stroke(path);
+      }
     }
     for (const p of this.pieces) if (p.state === 'placed' && !this.isAnimating(p)) this.stampPlaced(p);
   }
@@ -639,14 +644,14 @@ export class PuzzleGame {
 
     this.drawTray(dragging);
 
-    // Pieces being dragged go on top of everything, slightly enlarged.
+    // Pieces being dragged go on top of everything: big enough to see, and over
+    // the picture the magnifier shows where it would land.
     for (const gs of this.gestures.values()) {
       if (gs.kind !== 'drag') continue;
-      const p = this.pieces[gs.piece];
-      const lift = 1.04;
-      const sx = gs.px - gs.dx * this.scale * lift;
-      const sy = gs.py - gs.dy * this.scale * lift;
-      this.drawPieceAt(p, sx, sy, this.scale * lift);
+      const c = this.dragCentre(gs);
+      if (this.cellAt(c.x, c.y)) this.drawGhost(c.x, c.y);
+      const ds = this.dragScale();
+      this.drawPieceAt(this.pieces[gs.piece], gs.px - gs.dx * ds, gs.py - gs.dy * ds, ds);
     }
 
     if (this.trayVelocity !== 0) this.stepInertia();
@@ -757,7 +762,8 @@ export class PuzzleGame {
     const g = this.ctx;
     const cell = this.cellAt(x, y);
     // On the board: the selected piece shown where it would go, outlined.
-    if (cell) {
+    // Not on a blank board, where it would give the grid away.
+    if (cell && this.board !== 'blank') {
       if (this.focus !== null) {
         g.save();
         g.globalAlpha = 0.85;
@@ -1257,7 +1263,7 @@ export class PuzzleGame {
         // Along the tray swipes to another page; across it pulls the piece out toward the board.
         const alongBig = Math.abs(this.trayVertical ? my : mx);
         const acrossBig = Math.abs(this.trayVertical ? mx : my);
-        if (alongBig >= acrossBig || gs.piece === null) {
+        if (gs.piece === null || acrossBig < alongBig * 0.5) {
           const pos = this.trayVertical ? y : x;
           const start = this.trayVertical ? gs.startY : gs.startX;
           this.gestures.set(e.pointerId, { kind: 'swipe', id: e.pointerId, start, last: pos, lastT: performance.now(), velocity: 0 });
@@ -1265,23 +1271,14 @@ export class PuzzleGame {
           this.setSwipe(pos - start);
           return;
         }
-        const { cells, scale } = this.bigLayout();
-        const c = cells[this.tray.indexOf(gs.piece) - this.pageStart];
-        const dx = 0.5 + (gs.startX - c.cx) / scale;
-        const dy = 0.5 + (gs.startY - c.cy) / scale;
-        this.startDrag(e.pointerId, gs.piece, dx, dy, x, y);
+        this.liftFromTray(e.pointerId, gs.piece, x, y);
         return;
       }
       // In the tray, moving along the tray scrolls; moving across it pulls a piece out.
       const along = Math.abs(this.trayVertical ? my : mx);
       const across = Math.abs(this.trayVertical ? mx : my);
-      if (gs.piece !== null && across > along * 0.7) {
-        const k = this.tray.indexOf(gs.piece);
-        const c = this.slotCenter(k);
-        // Keep the grabbed point under the finger, converted to board scale.
-        const dx = 0.5 + (gs.startX - c.x) / this.trayScale;
-        const dy = 0.5 + (gs.startY - c.y) / this.trayScale;
-        this.startDrag(e.pointerId, gs.piece, dx, dy, x, y);
+      if (gs.piece !== null && across > along * 0.5) {
+        this.liftFromTray(e.pointerId, gs.piece, x, y);
       } else {
         const pos = this.trayVertical ? y : x;
         this.trayScroll -= pos - (this.trayVertical ? gs.startY : gs.startX);
@@ -1400,7 +1397,25 @@ export class PuzzleGame {
     if (this.placedCount === this.total) setTimeout(() => !this.destroyed && this.opts.onComplete(), SNAP_MS + 450);
   }
 
+  private dragScale(): number {
+    return Math.max(this.scale * 1.04, DRAG_MIN_PX);
+  }
+
+  /** Screen position of the centre of a dragged piece. */
+  private dragCentre(gs: Extract<Gesture, { kind: 'drag' }>): { x: number; y: number } {
+    const ds = this.dragScale();
+    return { x: gs.px + (0.5 - gs.dx) * ds, y: gs.py + (0.5 - gs.dy) * ds };
+  }
+
+  /** Pieces pulled out of the tray hang just above the finger, centred. */
+  private liftFromTray(id: number, piece: number, px: number, py: number): void {
+    const ds = this.dragScale();
+    this.startDrag(id, piece, 0.5, 1 + DRAG_LIFT_PX / ds, px, py);
+  }
+
   private startDrag(id: number, piece: number, dx: number, dy: number, px: number, py: number): void {
+    if (this.focus !== piece) this.misses = 0;
+    this.focus = piece; // the piece in her hand is the selected one
     this.gestures.set(id, { kind: 'drag', id, piece, dx, dy, px, py });
     playPickup();
     this.requestDraw();
@@ -1409,11 +1424,13 @@ export class PuzzleGame {
   private drop(gs: Extract<Gesture, { kind: 'drag' }>): void {
     const p = this.pieces[gs.piece];
     const i = gs.piece;
-    const wx = (gs.px - this.ox) / this.scale - gs.dx;
-    const wy = (gs.py - this.oy) / this.scale - gs.dy;
-    const centreX = this.ox + (wx + 0.5) * this.scale;
-    const centreY = this.oy + (wy + 0.5) * this.scale;
-    if (Math.hypot(wx - p.shape.col, wy - p.shape.row) < SNAP) {
+    const { x: centreX, y: centreY } = this.dragCentre(gs);
+    const wx = (centreX - this.ox) / this.scale - 0.5;
+    const wy = (centreY - this.oy) / this.scale - 0.5;
+    // Anywhere inside its own spot places it. Anywhere else it's simply laid
+    // down there, like on a real table, so she can try pieces out.
+    const cell = this.cellAt(centreX, centreY);
+    if (cell && cell.col === p.shape.col && cell.row === p.shape.row) {
       const k = this.tray.indexOf(i);
       this.place(i, wx, wy);
       if (this.focus === i) this.advanceFocus(k);
