@@ -27,6 +27,8 @@ type Gesture =
   | { kind: 'scroll'; id: number; last: number; lastT: number; velocity: number }
   | { kind: 'loupe'; id: number; x: number; y: number }
   | { kind: 'pan'; id: number; x: number; y: number }
+  /** Swiping the page of large pieces sideways. */
+  | { kind: 'swipe'; id: number; start: number; last: number; lastT: number; velocity: number }
   /** A finger left over from a pinch; ignored until lifted. */
   | { kind: 'idle'; id: number };
 
@@ -59,8 +61,11 @@ const SNAP = 0.42;
 const SLOT = 1.65;
 /** Pieces at least this big (CSS px, about 2.9 cm on an iPad) may give up size for extra tray lanes. */
 const COMFORT_PX = 150;
-/** Longest the arrow-button zone at each end of the tray gets (shorter on phones). */
-const ARROW_ZONE_MAX = 84;
+/** One spacing unit and one control size for everything on the puzzle screen. */
+const GAP = 12;
+const CTL = 56;
+/** Padding inside the tray. */
+const INSET = 8;
 const SNAP_MS = 140;
 /** Press this long on the board to get the magnifier. */
 const HOLD_MS = 320;
@@ -101,7 +106,6 @@ export class PuzzleGame {
   private trayCross = 1; // lanes of pieces across the tray
   private trayList: Rect = { x: 0, y: 0, w: 0, h: 0 }; // tray minus the arrow buttons
   private trayTarget: number | null = null; // animated scroll destination
-  private arrowZone = ARROW_ZONE_MAX;
   private bar = 0; // height of the strip above the tray on upright screens
   /** Area the board and loose pieces live in (everything but the tray). */
   private region: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -137,6 +141,9 @@ export class PuzzleGame {
   /** Phones: the page arrows sit in the strip above the tray, giving pieces the full width. */
   private arrowsInBar = false;
   private bigBitmaps = new Map<number, HTMLCanvasElement>();
+  /** How far the big page is dragged along the tray (px), and where it's animating to. */
+  private swipeOffset = 0;
+  private swipeTarget: number | null = null;
   private bigBitmapScale = 0;
   private misses = 0;
   private flashes: Flash[] = [];
@@ -187,7 +194,7 @@ export class PuzzleGame {
     this.arrowPrev = arrowButton(opts.labels.prev, () => this.page(-1));
     this.arrowNext = arrowButton(opts.labels.next, () => this.page(1));
     this.allButton = document.createElement('button');
-    this.allButton.className = 'tray-all';
+    this.allButton.className = 'tray-all ctl';
     this.allButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span></span>`;
     this.allButton.querySelector('span')!.textContent = opts.labels.all;
     this.allButton.addEventListener('click', () => {
@@ -266,12 +273,10 @@ export class PuzzleGame {
   page(dir: 1 | -1): void {
     this.hideToast();
     if (this.trayMode === 'big') {
-      const n = this.bigLayout().cells.length;
-      const pages = Math.ceil(this.tray.length / n);
-      if (pages <= 1) return;
-      this.pageStart = ((Math.floor(this.pageStart / n) + dir + pages) % pages) * n;
-      this.focus = this.tray[this.pageStart];
-      this.misses = 0;
+      const { cells, length } = this.bigLayout();
+      if (this.pageCount(cells.length) <= 1) return;
+      this.finishSwipe();
+      this.swipeTarget = -dir * length; // slide the page out, then show the next one
       playPickup();
       this.requestDraw();
       return;
@@ -350,15 +355,15 @@ export class PuzzleGame {
 
     // Make pieces as big as possible. The tray holds pieces at full board size,
     // and is always deep enough to show a picked piece large.
-    const gap = 12;
-    const margin = 16;
+    const gap = GAP;
+    const margin = GAP;
     this.trayVertical = this.W >= this.H;
     const v = this.trayVertical;
     // Upright screens get a bar above the tray for "All pieces" and the hint,
     // so they never cover the large piece.
-    this.bar = v ? 0 : 64;
+    this.bar = v ? 0 : CTL + GAP;
     // Landscape: a column on the left for the zoom buttons, so they never cover the board.
-    const zoomCol = v ? 76 : 0;
+    const zoomCol = v ? GAP + CTL : 0;
     const minThick = v ? clamp(this.W * 0.25, 220, 380) : clamp(this.H * 0.36, 200, 420);
     const fitThick = (t: number) =>
       v
@@ -382,22 +387,21 @@ export class PuzzleGame {
     this.trayScale = this.scale; // the tray never zooms
     let thick = Math.max(minThick, lanes * SLOT * this.scale);
     // Upright: empty space under a width-limited board goes to the tray instead.
-    if (!v) thick = Math.max(thick, this.H - gap * 2 - this.bar - (this.rows * this.scale + margin * 2));
-    this.arrowsInBar = !v && this.W < 600;
+    if (!v) thick = Math.max(thick, this.H - gap - this.bar - (this.rows * this.scale + margin * 2));
+    // Upright screens: the page arrows sit in the strip above the tray, so pieces get its full width.
+    this.arrowsInBar = !v;
     // A deep tray with small pieces fits extra lanes.
     this.trayCross = clamp(Math.floor(thick / (SLOT * this.scale)), lanes, 6);
 
-    const along = v ? this.H - gap * 2 : this.W - gap * 2;
-    const ARROW_ZONE = this.arrowsInBar ? 0 : clamp(along * 0.14, 56, ARROW_ZONE_MAX);
-    this.arrowZone = ARROW_ZONE;
+    const ARROW_ZONE = this.arrowsInBar ? 0 : CTL + INSET * 2;
     let region: Rect;
     if (v) {
       this.trayRect = { x: this.W - thick - gap, y: gap, w: thick, h: this.H - gap * 2 };
-      this.trayList = { x: this.trayRect.x, y: this.trayRect.y + ARROW_ZONE, w: thick, h: this.trayRect.h - ARROW_ZONE * 2 };
+      this.trayList = { x: this.trayRect.x + INSET, y: this.trayRect.y + ARROW_ZONE, w: thick - INSET * 2, h: this.trayRect.h - ARROW_ZONE * 2 };
       region = { x: zoomCol, y: 0, w: this.trayRect.x - zoomCol, h: this.H };
     } else {
       this.trayRect = { x: gap, y: this.H - thick - gap, w: this.W - gap * 2, h: thick };
-      this.trayList = { x: this.trayRect.x + ARROW_ZONE, y: this.trayRect.y, w: this.trayRect.w - ARROW_ZONE * 2, h: thick };
+      this.trayList = { x: this.trayRect.x + INSET, y: this.trayRect.y + INSET, w: this.trayRect.w - INSET * 2, h: thick - INSET * 2 };
       region = { x: 0, y: 0, w: this.W, h: this.trayRect.y - this.bar };
     }
     this.ox = region.x + (region.w - this.cols * this.scale) / 2;
@@ -409,9 +413,9 @@ export class PuzzleGame {
     // Landscape: their own column left of the board. Upright: the strip above
     // the tray, opposite "All pieces". Never on top of the picture.
     if (v) {
-      Object.assign(this.zoomBox.style, { left: '10px', top: `${region.y + 12}px`, right: '' });
+      Object.assign(this.zoomBox.style, { left: `${GAP}px`, top: `${region.y + GAP}px`, right: '' });
     } else {
-      Object.assign(this.zoomBox.style, { left: '', top: `${this.trayRect.y - this.bar + 6}px`, right: `${this.W - this.trayRect.x - this.trayRect.w}px` });
+      Object.assign(this.zoomBox.style, { left: '', top: `${this.trayRect.y - GAP - CTL}px`, right: `${this.W - this.trayRect.x - this.trayRect.w}px` });
     }
     this.zoomBox.classList.toggle('row', !v);
     Object.assign(this.toast.style, { left: `${region.x + region.w / 2}px`, bottom: `${this.H - region.y - region.h + 12}px` });
@@ -653,7 +657,11 @@ export class PuzzleGame {
         this.trayTarget = null;
       }
     }
-    if (animating || this.trayVelocity !== 0 || this.trayTarget !== null) this.requestDraw();
+    if (this.swipeTarget !== null) {
+      this.swipeOffset += (this.swipeTarget - this.swipeOffset) * 0.3;
+      if (Math.abs(this.swipeTarget - this.swipeOffset) < 1) this.finishSwipe();
+    }
+    if (animating || this.trayVelocity !== 0 || this.trayTarget !== null || this.swipeTarget !== null) this.requestDraw();
   }
 
   /** Board, placed pieces, snap animations, loose pieces and flashes. Returns true while animating. */
@@ -810,29 +818,42 @@ export class PuzzleGame {
     g.rect(L.x, L.y, L.w, L.h);
     g.clip();
     if (this.trayMode === 'big') {
-      const { cells, scale } = this.bigLayout();
+      const { cells, scale, area, length } = this.bigLayout();
+      const n = cells.length;
       if (Math.abs(scale - this.bigBitmapScale) > 0.5) {
         this.bigBitmaps.clear();
         this.bigBitmapScale = scale;
       }
       const size = (1 + PAD * 2) * scale;
-      if (this.pageStart >= this.tray.length) this.pageStart = Math.max(0, Math.floor((this.tray.length - 1) / cells.length) * cells.length);
-      // Keep only this page's large bitmaps around; iOS is strict about canvas memory.
-      if (this.bigBitmaps.size > cells.length * 3) {
-        const keep = new Set(this.tray.slice(this.pageStart, this.pageStart + cells.length));
+      if (this.pageStart >= this.tray.length) this.pageStart = Math.max(0, Math.floor((this.tray.length - 1) / n) * n);
+      // While sliding, the neighbouring pages show at the edges.
+      const sliding = this.swipeOffset !== 0 && this.pageCount(n) > 1;
+      const pagesToDraw = sliding ? [-1, 0, 1] : [0];
+      // Keep only the visible pages' large bitmaps; iOS is strict about canvas memory.
+      if (this.bigBitmaps.size > n * 4) {
+        const keep = new Set([-1, 0, 1].flatMap((k) => this.tray.slice(this.pageStartAt(k, n), this.pageStartAt(k, n) + n)));
         for (const key of [...this.bigBitmaps.keys()]) if (!keep.has(key)) this.bigBitmaps.delete(key);
       }
-      cells.forEach((c, k) => {
-        const i = this.tray[this.pageStart + k];
-        if (i === undefined || dragging.has(i)) return;
-        let bmp = this.bigBitmaps.get(i);
-        if (!bmp) {
-          bmp = this.renderPiece(this.pieces[i], true, scale);
-          this.bigBitmaps.set(i, bmp);
-        }
-        g.drawImage(bmp, c.cx - size / 2, c.cy - size / 2, size, size);
-        if (i === this.focus) this.strokeSelection(i, c.cx - scale / 2, c.cy - scale / 2, scale);
-      });
+      g.beginPath();
+      g.rect(area.x, area.y, area.w, area.h);
+      g.clip();
+      for (const k of pagesToDraw) {
+        const start = k === 0 ? this.pageStart : this.pageStartAt(k, n);
+        const shift = this.swipeOffset + k * length;
+        cells.forEach((c, j) => {
+          const i = this.tray[start + j];
+          if (i === undefined || dragging.has(i)) return;
+          let bmp = this.bigBitmaps.get(i);
+          if (!bmp) {
+            bmp = this.renderPiece(this.pieces[i], true, scale);
+            this.bigBitmaps.set(i, bmp);
+          }
+          const cx = c.cx + (this.trayVertical ? 0 : shift);
+          const cy = c.cy + (this.trayVertical ? shift : 0);
+          g.drawImage(bmp, cx - size / 2, cy - size / 2, size, size);
+          if (k === 0 && i === this.focus) this.strokeSelection(i, cx - scale / 2, cy - scale / 2, scale);
+        });
+      }
       g.restore();
       this.syncArrows();
       return;
@@ -854,9 +875,14 @@ export class PuzzleGame {
    * stays clearly bigger than on the board (or the biggest single piece if
    * nothing fits that). Usually 2×2 on a phone, a column of 2–3 on an iPad.
    */
-  private bigLayout(): { scale: number; cells: { cx: number; cy: number; w: number; h: number }[] } {
+  private bigLayout(): {
+    scale: number;
+    cells: { cx: number; cy: number; w: number; h: number }[];
+    area: Rect;
+    length: number;
+  } {
     const L = this.trayList;
-    const top = this.gridAllowed() && !this.bar ? 64 : 0; // the mode button sits at the top of a side tray
+    const top = this.gridAllowed() && !this.bar ? CTL + INSET : 0; // the mode button sits at the top of a side tray
     const area = { x: L.x, y: L.y + top, w: L.w, h: L.h - top };
     const slot = 1.6; // piece plus room for tabs, in piece widths
     const target = clamp(this.base.scale * 1.05, 80, 140); // at least board size, and never tiny
@@ -874,11 +900,41 @@ export class PuzzleGame {
     const h = area.h / b.r;
     const cells = [];
     for (let r = 0; r < b.r; r++) for (let c = 0; c < b.c; c++) cells.push({ cx: area.x + (c + 0.5) * w, cy: area.y + (r + 0.5) * h, w, h });
-    return { scale: b.scale, cells };
+    return { scale: b.scale, cells, area, length: this.trayVertical ? area.h : area.w };
+  }
+
+  private pageCount(n: number): number {
+    return Math.max(1, Math.ceil(this.tray.length / n));
+  }
+
+  /** First tray index of the page `k` steps from the current one. Wraps around: the tray is endless. */
+  private pageStartAt(k: number, n: number): number {
+    const pages = this.pageCount(n);
+    const idx = Math.floor(this.pageStart / n);
+    return ((((idx + k) % pages) + pages) % pages) * n;
+  }
+
+  private setSwipe(offset: number): void {
+    const n = this.bigLayout().cells.length;
+    this.swipeOffset = this.pageCount(n) > 1 ? offset : offset * 0.25;
+    this.requestDraw();
+  }
+
+  /** Jump to the end of a running page animation (used before starting another, or on touch). */
+  private finishSwipe(): void {
+    if (this.swipeTarget !== null && this.swipeTarget !== 0) {
+      const n = this.bigLayout().cells.length;
+      this.pageStart = this.pageStartAt(this.swipeTarget < 0 ? 1 : -1, n);
+      this.focus = this.tray[this.pageStart] ?? null;
+      this.misses = 0;
+    }
+    this.swipeTarget = null;
+    this.swipeOffset = 0;
   }
 
   /** Which piece on the big page is under a screen point. */
   private bigHit(x: number, y: number): number | null {
+    if (this.swipeOffset !== 0) return null;
     const { cells } = this.bigLayout();
     for (let k = 0; k < cells.length; k++) {
       const c = cells[k];
@@ -908,8 +964,9 @@ export class PuzzleGame {
     g.restore();
   }
 
+  /** The small-pieces view is offered where there's room for it (not on phones). */
   private gridAllowed(): boolean {
-    return !this.arrowsInBar;
+    return this.W >= 600;
   }
 
   private setMode(mode: 'big' | 'grid'): void {
@@ -953,31 +1010,25 @@ export class PuzzleGame {
 
   private placeArrows(): void {
     const r = this.trayRect;
-    const v = this.trayVertical;
-    const place = (b: HTMLButtonElement, start: boolean) => {
-      const box = v
-        ? { x: r.x, y: start ? r.y : r.y + r.h - this.arrowZone, w: r.w, h: this.arrowZone }
-        : { x: start ? r.x : r.x + r.w - this.arrowZone, y: r.y, w: this.arrowZone, h: r.h };
-      Object.assign(b.style, { left: `${box.x + 6}px`, top: `${box.y + 6}px`, width: `${box.w - 12}px`, height: `${box.h - 12}px` });
-      b.dataset.dir = v ? (start ? 'up' : 'down') : start ? 'left' : 'right';
-    };
-    place(this.arrowPrev, true);
-    place(this.arrowNext, false);
-    const barTop = r.y - this.bar + 6;
-    this.arrowPrev.classList.toggle('in-bar', this.arrowsInBar);
-    this.arrowNext.classList.toggle('in-bar', this.arrowsInBar);
+    const L = this.trayList;
+    this.arrowPrev.classList.toggle('strip', !this.arrowsInBar);
+    this.arrowNext.classList.toggle('strip', !this.arrowsInBar);
     if (this.arrowsInBar) {
-      const size = 52;
-      Object.assign(this.arrowPrev.style, { left: `${r.x}px`, top: `${barTop}px`, width: `${size}px`, height: `${size}px` });
-      Object.assign(this.arrowNext.style, { left: `${r.x + size + 10}px`, top: `${barTop}px`, width: `${size}px`, height: `${size}px` });
+      // Upright: a row above the tray: [<] [>] [All pieces] ........ [+] [-]
+      const top = r.y - GAP - CTL;
+      Object.assign(this.arrowPrev.style, { left: `${r.x}px`, top: `${top}px`, width: `${CTL}px`, height: `${CTL}px` });
+      Object.assign(this.arrowNext.style, { left: `${r.x + CTL + GAP}px`, top: `${top}px`, width: `${CTL}px`, height: `${CTL}px` });
       this.arrowPrev.dataset.dir = 'left';
       this.arrowNext.dataset.dir = 'right';
-    }
-    const L = this.trayList;
-    if (this.bar) {
-      Object.assign(this.allButton.style, { left: `${r.x}px`, top: `${barTop}px`, maxWidth: '' });
+      Object.assign(this.allButton.style, { left: `${r.x + (CTL + GAP) * 2}px`, top: `${top}px`, maxWidth: '' });
     } else {
-      Object.assign(this.allButton.style, { left: `${L.x + 8}px`, top: `${L.y + 8}px`, maxWidth: `${L.w - 16}px` });
+      // Landscape: full-width strips at both ends of the tray, mode button at the top of the list.
+      const w = r.w - INSET * 2;
+      Object.assign(this.arrowPrev.style, { left: `${r.x + INSET}px`, top: `${r.y + INSET}px`, width: `${w}px`, height: `${CTL}px` });
+      Object.assign(this.arrowNext.style, { left: `${r.x + INSET}px`, top: `${r.y + r.h - INSET - CTL}px`, width: `${w}px`, height: `${CTL}px` });
+      this.arrowPrev.dataset.dir = 'up';
+      this.arrowNext.dataset.dir = 'down';
+      Object.assign(this.allButton.style, { left: `${L.x}px`, top: `${L.y}px`, maxWidth: `${L.w}px` });
     }
   }
 
@@ -1114,6 +1165,7 @@ export class PuzzleGame {
       this.trayVelocity = 0;
       this.trayTarget = null;
       if (this.trayMode === 'big') {
+        this.finishSwipe();
         pending('big', this.bigHit(x, y));
       } else {
         const k = this.slotAt(x, y);
@@ -1161,6 +1213,15 @@ export class PuzzleGame {
       return;
     }
     if (gs.kind === 'idle') return;
+    if (gs.kind === 'swipe') {
+      const pos = this.trayVertical ? y : x;
+      const now = performance.now();
+      gs.velocity = 0.7 * gs.velocity + 0.3 * ((pos - gs.last) / Math.max(1, now - gs.lastT));
+      gs.last = pos;
+      gs.lastT = now;
+      this.setSwipe(pos - gs.start);
+      return;
+    }
     if (gs.kind === 'pan') {
       this.panBy(x - gs.x, y - gs.y);
       gs.x = x;
@@ -1193,7 +1254,17 @@ export class PuzzleGame {
         return;
       }
       if (gs.origin === 'big') {
-        if (gs.piece === null) return;
+        // Along the tray swipes to another page; across it pulls the piece out toward the board.
+        const alongBig = Math.abs(this.trayVertical ? my : mx);
+        const acrossBig = Math.abs(this.trayVertical ? mx : my);
+        if (alongBig >= acrossBig || gs.piece === null) {
+          const pos = this.trayVertical ? y : x;
+          const start = this.trayVertical ? gs.startY : gs.startX;
+          this.gestures.set(e.pointerId, { kind: 'swipe', id: e.pointerId, start, last: pos, lastT: performance.now(), velocity: 0 });
+          this.swipeTarget = null;
+          this.setSwipe(pos - start);
+          return;
+        }
         const { cells, scale } = this.bigLayout();
         const c = cells[this.tray.indexOf(gs.piece) - this.pageStart];
         const dx = 0.5 + (gs.startX - c.cx) / scale;
@@ -1252,6 +1323,17 @@ export class PuzzleGame {
       this.pinch = null;
       clearTimeout(this.rerenderTimer);
       this.rerenderTimer = window.setTimeout(() => this.rerender(), 60);
+      return;
+    }
+    if (gs?.kind === 'swipe') {
+      const { cells, length } = this.bigLayout();
+      const fling = Math.abs(gs.velocity) > 0.5 && performance.now() - gs.lastT < 100;
+      const far = Math.abs(this.swipeOffset) > length * 0.2;
+      const turn = this.pageCount(cells.length) > 1 && (far || fling) && e.type !== 'pointercancel';
+      const dir = fling ? Math.sign(gs.velocity) : Math.sign(this.swipeOffset);
+      this.swipeTarget = turn && dir !== 0 ? dir * length : 0;
+      if (turn) playPickup();
+      this.requestDraw();
       return;
     }
     if (!gs || gs.kind === 'idle' || gs.kind === 'pan') return;
@@ -1427,8 +1509,10 @@ export function loupePosition(x: number, y: number, r: number, width: number): {
 
 function zoomButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
-  b.className = 'zoom-btn';
-  b.textContent = text;
+  b.className = 'zoom-btn ctl';
+  // Drawn, not typed: text glyphs sit off-centre in a round button.
+  const d = text === '+' ? 'M12 5v14M5 12h14' : 'M5 12h14';
+  b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
   b.setAttribute('aria-label', label);
   b.addEventListener('click', onClick);
   return b;
@@ -1436,7 +1520,7 @@ function zoomButton(text: string, label: string, onClick: () => void): HTMLButto
 
 function arrowButton(label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
-  b.className = 'tray-arrow';
+  b.className = 'tray-arrow ctl';
   b.setAttribute('aria-label', label);
   b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
   b.addEventListener('click', onClick);
