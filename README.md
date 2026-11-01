@@ -26,7 +26,7 @@ Every push to `main` builds and deploys to GitHub Pages (`.github/workflows/depl
 
 ## How it plays
 
-- Pick a picture, pick how many pieces (6 to 50). The cap keeps pieces at least about 1.5 cm on an iPad screen, and usually 2.5–3 cm.
+- Pick a picture, pick how many pieces: 6, 12, 20, 35, 50 or 144. At 144 the pieces are small on screen; zoom and the large-piece tray make them workable.
 - Pieces wait in a tray beside the board, shown large a few at a time (2×2 on a phone). Arrows page through them. On an iPad, "All pieces" switches to a scrollable view of every piece.
 - Tap a piece to select it (yellow outline), then tap the spot on the picture where it goes. A wrong spot flashes red; after three misses the right spot pulses yellow.
 - Press and hold on the picture for a magnifier that previews the picked piece in the spot under your finger. Let go to place it.

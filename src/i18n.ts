@@ -40,6 +40,7 @@ const strings = {
   level_3: { sv: 'Lagom', en: 'Medium' },
   level_4: { sv: 'Utmanande', en: 'Challenging' },
   level_5: { sv: 'Svår', en: 'Hard' },
+  level_6: { sv: 'Expert', en: 'Expert' },
   trayPrev: { sv: 'Föregående bitar', en: 'Previous pieces' },
   trayNext: { sv: 'Fler bitar', en: 'More pieces' },
   trayAll: { sv: 'Alla bitar', en: 'All pieces' },

@@ -200,13 +200,14 @@ async function fillGallery(gallery: HTMLElement, refresh: boolean): Promise<void
 
 // ------------------------------------------------------------------ piece count picker
 
-// Capped at about 50: beyond that pieces get too small on an iPad screen.
+// 144 pieces are small on screen; zoom, the magnifier and the large-piece tray make them workable.
 const LEVELS: { target: number; label: StringKey }[] = [
   { target: 6, label: 'level_1' },
   { target: 12, label: 'level_2' },
   { target: 20, label: 'level_3' },
   { target: 35, label: 'level_4' },
   { target: 50, label: 'level_5' },
+  { target: 144, label: 'level_6' },
 ];
 const LEVEL_KEY = 'jigsaw.level';
 

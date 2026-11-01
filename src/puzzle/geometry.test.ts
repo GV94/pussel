@@ -8,6 +8,9 @@ describe('chooseGrid', () => {
     [48, 16 / 9],
     [96, 1],
     [150, 3 / 4],
+    [144, 3 / 2],
+    [144, 1],
+    [144, 16 / 9],
   ])('gets close to %i pieces with near-square cells for aspect %f', (target, aspect) => {
     const { cols, rows } = chooseGrid(target, aspect);
     expect(Math.abs(cols * rows - target) / target).toBeLessThan(0.2);
