@@ -200,7 +200,7 @@ async function fillGallery(gallery: HTMLElement, refresh: boolean): Promise<void
 
 // ------------------------------------------------------------------ piece count picker
 
-// 144 pieces are small on screen; zoom, the magnifier and the large-piece tray make them workable.
+// 144 pieces are small on screen; zoom and the large-piece tray make them workable.
 const LEVELS: { target: number; label: StringKey }[] = [
   { target: 6, label: 'level_1' },
   { target: 12, label: 'level_2' },

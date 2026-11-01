@@ -25,7 +25,6 @@ type Gesture =
   | { kind: 'pending'; id: number; startX: number; startY: number; piece: number | null; origin: Origin; timer: number }
   | { kind: 'drag'; id: number; piece: number; dx: number; dy: number; px: number; py: number }
   | { kind: 'scroll'; id: number; last: number; lastT: number; velocity: number }
-  | { kind: 'loupe'; id: number; x: number; y: number }
   | { kind: 'pan'; id: number; x: number; y: number }
   /** Swiping the page of large pieces sideways. */
   | { kind: 'swipe'; id: number; start: number; last: number; lastT: number; velocity: number }
@@ -69,8 +68,6 @@ const CTL = 56;
 /** Padding inside the tray. */
 const INSET = 8;
 const SNAP_MS = 140;
-/** Press this long on the board to get the magnifier. */
-const HOLD_MS = 320;
 const MISS_MS = 700;
 const HINT_MS = 2400;
 /** Wrong guesses with the same piece before its spot is pointed out. */
@@ -639,13 +636,11 @@ export class PuzzleGame {
     g.clip();
     const animating = this.drawBoardAndTable(dragging, now);
     g.restore();
-    const loupe = [...this.gestures.values()].find((gs) => gs.kind === 'loupe');
-    if (loupe) this.drawGhost(loupe.x, loupe.y);
 
     this.drawTray(dragging);
 
     // Pieces being dragged go on top of everything: big enough to see, and over
-    // the picture the magnifier shows where it would land.
+    // the picture a faint copy shows where it would land.
     for (const gs of this.gestures.values()) {
       if (gs.kind !== 'drag') continue;
       const c = this.dragCentre(gs);
@@ -757,50 +752,22 @@ export class PuzzleGame {
     return { col, row };
   }
 
-  /** While pressing on the board: the picked piece shown where it would go, plus a magnifier. */
+  /** While dragging over the board: the piece shown faintly where it would land, outlined. */
   private drawGhost(x: number, y: number): void {
     const g = this.ctx;
     const cell = this.cellAt(x, y);
-    // On the board: the selected piece shown where it would go, outlined.
     // Not on a blank board, where it would give the grid away.
-    if (cell && this.board !== 'blank') {
-      if (this.focus !== null) {
-        g.save();
-        g.globalAlpha = 0.85;
-        this.drawPieceAt(this.pieces[this.focus], this.ox + cell.col * this.scale, this.oy + cell.row * this.scale, this.scale);
-        g.restore();
-      }
+    if (!cell || this.board === 'blank') return;
+    if (this.focus !== null) {
       g.save();
-      g.strokeStyle = '#fff';
-      g.lineWidth = Math.max(3, this.scale * 0.04);
-      g.stroke(this.screenPath(cell.col, cell.row));
+      g.globalAlpha = 0.85;
+      this.drawPieceAt(this.pieces[this.focus], this.ox + cell.col * this.scale, this.oy + cell.row * this.scale, this.scale);
       g.restore();
     }
-
-    // Magnifier above the finger, so the finger doesn't hide the spot.
-    const r = clamp(Math.min(this.W, this.H) * 0.2, 70, 130);
-    const zoom = clamp(120 / this.scale, 2, 5); // a cell shows about 120 px wide
-    const { lx, ly } = loupePosition(x, y, r, this.W);
     g.save();
-    g.beginPath();
-    g.arc(lx, ly, r, 0, Math.PI * 2);
-    g.fillStyle = '#3b6b5c';
-    g.fill();
-    g.clip();
-    g.translate(lx, ly);
-    g.scale(zoom, zoom);
-    g.translate(-x, -y);
-    // Inside the magnifier: just the picture itself, magnified. Nothing drawn on top.
-    this.drawSource(g, 0, 0, this.cols, this.rows, this.ox, this.oy, this.cols * this.scale, this.rows * this.scale);
-    g.restore();
-    g.save();
-    g.beginPath();
-    g.arc(lx, ly, r, 0, Math.PI * 2);
     g.strokeStyle = '#fff';
-    g.lineWidth = 5;
-    g.shadowColor = 'rgba(0,0,0,0.4)';
-    g.shadowBlur = 12;
-    g.stroke();
+    g.lineWidth = Math.max(3, this.scale * 0.04);
+    g.stroke(this.screenPath(cell.col, cell.row));
     g.restore();
   }
 
@@ -1143,7 +1110,7 @@ export class PuzzleGame {
     if (!this.inTray(x, y) && this.gestures.size === 1 && !this.pinch) {
       const [otherId, other] = [...this.gestures.entries()][0];
       const pinchable =
-        (other.kind === 'pending' && (other.origin === 'board' || other.origin === 'table')) || other.kind === 'loupe' || other.kind === 'pan';
+        (other.kind === 'pending' && (other.origin === 'board' || other.origin === 'table')) || other.kind === 'pan';
       const op = this.pointers.get(otherId);
       if (pinchable && op) {
         if (other.kind === 'pending') clearTimeout(other.timer);
@@ -1184,15 +1151,8 @@ export class PuzzleGame {
       pending('table', hit);
       return;
     }
-    // Empty board or table: a tap places the picked piece, a press-and-hold magnifies.
-    const timer = window.setTimeout(() => {
-      const gs = this.gestures.get(e.pointerId);
-      if (gs?.kind === 'pending' && gs.origin === 'board') {
-        this.gestures.set(e.pointerId, { kind: 'loupe', id: e.pointerId, x: gs.startX, y: gs.startY });
-        this.requestDraw();
-      }
-    }, HOLD_MS);
-    pending('board', null, timer);
+    // Empty board or table: a tap places the selected piece.
+    pending('board', null);
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -1240,13 +1200,12 @@ export class PuzzleGame {
       if (Math.hypot(mx, my) < 10) return;
       clearTimeout(gs.timer);
       if (gs.origin === 'board') {
-        // Zoomed in: dragging moves the picture. Otherwise it shows the magnifier.
+        // Zoomed in: dragging moves the picture. Otherwise a moved finger is not a tap.
         if (this.zoom > 1.001) {
           this.gestures.set(e.pointerId, { kind: 'pan', id: e.pointerId, x, y });
           this.panBy(x - gs.startX, y - gs.startY);
         } else {
-          this.gestures.set(e.pointerId, { kind: 'loupe', id: e.pointerId, x, y });
-          this.requestDraw();
+          this.gestures.set(e.pointerId, { kind: 'idle', id: e.pointerId });
         }
         return;
       }
@@ -1286,12 +1245,6 @@ export class PuzzleGame {
         this.gestures.set(e.pointerId, { kind: 'scroll', id: e.pointerId, last: pos, lastT: performance.now(), velocity: 0 });
         this.requestDraw();
       }
-      return;
-    }
-    if (gs.kind === 'loupe') {
-      gs.x = x;
-      gs.y = y;
-      this.requestDraw();
       return;
     }
     if (gs.kind === 'scroll') {
@@ -1346,11 +1299,6 @@ export class PuzzleGame {
         this.setFocus(gs.piece);
       } else if ((gs.origin === 'big' || gs.origin === 'table') && gs.piece !== null) this.setFocus(gs.piece);
       else if (gs.origin === 'board' && this.focus !== null) this.tryPlace(this.focus, this.cellAt(gs.startX, gs.startY));
-      return;
-    }
-    if (gs.kind === 'loupe') {
-      if (!cancelled && this.focus !== null) this.tryPlace(this.focus, this.cellAt(gs.x, gs.y));
-      this.requestDraw();
       return;
     }
     if (gs.kind === 'scroll') {
@@ -1505,23 +1453,6 @@ function strokePiece(g: CanvasRenderingContext2D, path: Path2D, s: number): void
   g.strokeStyle = 'rgba(0,0,0,0.35)';
   g.lineWidth = Math.max(1, s * 0.008);
   g.stroke(path);
-}
-
-/**
- * Where to put the magnifier for a finger at (x, y). Always above the finger,
- * never below it where the finger would hide it. Near the top edge, where it
- * can't fit above, it moves to the side instead (left first, as a right hand
- * covers the area to its lower right).
- */
-export function loupePosition(x: number, y: number, r: number, width: number): { lx: number; ly: number } {
-  const gap = 56;
-  const margin = 6;
-  const above = y - r - gap;
-  if (above >= r + margin) return { lx: clamp(x, r + margin, width - r - margin), ly: above };
-  const side = r + gap;
-  const lx = x - side - r >= margin ? x - side : Math.min(x + side, width - r - margin);
-  const ly = Math.min(Math.max(r + margin, above), y);
-  return { lx, ly };
 }
 
 function zoomButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
