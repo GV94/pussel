@@ -432,4 +432,42 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 }
 
-showHome();
+// ------------------------------------------------------------------ updates
+
+declare const __BUILD__: string;
+const RESUME_KEY = 'jigsaw.resumeAfterUpdate';
+
+/**
+ * A home-screen app on iOS is resumed, not restarted, so it would keep running
+ * an old version for days. Whenever it comes back to the screen, ask the
+ * server which version is current; if it's newer, reload, and go straight
+ * back into the puzzle she was doing.
+ */
+async function checkForUpdate(): Promise<void> {
+  if (!import.meta.env.PROD || !navigator.onLine) return;
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}version.json`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const { build } = (await res.json()) as { build: string };
+    if (build === __BUILD__) return;
+    if (game) {
+      clearTimeout(saveTimer);
+      const saved = loadGame();
+      if (saved) saveGame({ ...game.toSaved(), image: saved.image });
+      sessionStorage.setItem(RESUME_KEY, '1');
+    }
+    location.reload();
+  } catch {
+    // Offline or server trouble: carry on with the version we have.
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void checkForUpdate();
+});
+
+const resume = sessionStorage.getItem(RESUME_KEY) === '1' ? loadGame() : null;
+sessionStorage.removeItem(RESUME_KEY);
+if (resume) void startGame(resume.image, resume.cols, resume.rows, resume.seed, resume);
+else showHome();
+void checkForUpdate();

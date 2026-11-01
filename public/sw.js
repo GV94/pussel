@@ -6,7 +6,7 @@
 //   so a picture that has been opened or played keeps working offline.
 // - Commons searches go to the network first and fall back to the last answer.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `pussel-shell-${VERSION}`;
 const IMAGES = 'pussel-images'; // kept across versions
 const API = 'pussel-api';
@@ -48,10 +48,15 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
+  // Always ask the server about version.json; never answer it from a cache.
+  if (url.origin === location.origin && url.pathname.endsWith('/version.json')) return;
+
   // Opening the app: try the network for the newest version, else the stored copy.
+  // 'no-cache' makes the browser check with the server instead of reusing its
+  // own copy (GitHub Pages lets browsers keep pages for 10 minutes).
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(SHELL).then((c) => c.put(BASE, copy));
